@@ -55,7 +55,6 @@ namespace Solution
 
         private void Update()
         {
-            // ป้องกัน NullReferenceException
             if (growAction != null && growAction.triggered)
             {
                 Grow();
