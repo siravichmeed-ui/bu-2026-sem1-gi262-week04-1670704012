@@ -1,20 +1,18 @@
 using System.Collections;
 using System.Collections.Generic;
-using Unity.VisualScripting;
 using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
-using UnityEngine.UIElements;
 
 namespace Solution
 {
     public class ZombieParade : Character
     {
-        // ใช้ LinkedList ในการจัดการส่วนของงูเพื่อประสิทธิภาพในการเพิ่ม/ลบ
+        // รายการส่วนของขบวน
         private LinkedList<GameObject> Parade = new LinkedList<GameObject>();
 
-        public GameObject bodyPrefab; // Prefab ของส่วนลำตัวงู
-        public float moveInterval = 0.5f; // ช่วงเวลาในการเคลื่อนที่ (0.5 วินาที)
+        [Header("Parade Settings")]
+        public GameObject bodyPrefab;
+        public float moveInterval = 0.5f;
 
         private Vector3 moveDirection;
 
@@ -22,21 +20,48 @@ namespace Solution
 
         private void Start()
         {
-            growAction = InputSystem.actions.FindAction("Grow");
+            // หา Action Grow
+            growAction = InputSystem.actions.FindAction("Grow", false);
+
+            if (growAction == null)
+            {
+                Debug.LogError(
+                    "ZombieParade: หา Input Action 'Grow' ไม่เจอ! " +
+                    "ให้ตรวจสอบ Input Actions ว่ามี Action ชื่อ Grow หรือไม่"
+                );
+            }
+
+            // ตรวจสอบ MapGenerator
+            if (mapGenerator == null)
+            {
+                Debug.LogError(
+                    "ZombieParade: mapGenerator เป็น NULL! " +
+                    "ตรวจสอบ Character หรือการ Assign MapGenerator"
+                );
+            }
+
             moveDirection = Vector3.up;
             isAlive = true;
-            // เริ่ม Coroutine สำหรับการเคลื่อนที่
-            StartCoroutine(MoveParade());
 
+            // เพิ่มหัวเข้า Parade
+            if (!Parade.Contains(gameObject))
+            {
+                Parade.AddFirst(gameObject);
+            }
+
+            // เริ่มการเคลื่อนที่
+            StartCoroutine(MoveParade());
         }
 
         private void Update()
         {
-            if (growAction.triggered)
+            // ป้องกัน NullReferenceException
+            if (growAction != null && growAction.triggered)
             {
                 Grow();
             }
         }
+
         private Vector3 RandomizeDirection()
         {
             List<Vector3> possibleDirections = new List<Vector3>
@@ -47,58 +72,242 @@ namespace Solution
                 Vector3.right
             };
 
-            return possibleDirections[Random.Range(0, possibleDirections.Count)];
+            return possibleDirections[
+                Random.Range(0, possibleDirections.Count)
+            ];
         }
-        // Coroutine สำหรับการเคลื่อนที่ทีละช่อง
+
+        // =========================================================
+        // MOVE PARADE
+        // =========================================================
+
         IEnumerator MoveParade()
         {
-            //0. สร้างหัวงู
-
             while (isAlive)
             {
-                // 1. ดึงส่วนแรกของงูออกมา
+                // ไม่มีสมาชิกใน Parade
+                if (Parade.Count == 0)
+                {
+                    Debug.LogError("ZombieParade: Parade ไม่มีสมาชิก");
+                    yield break;
+                }
 
-                // 2. ดึงส่วนสุดท้ายของงูออกมา
-             
-                // 3. ลบส่วนสุดท้ายออกจาก LinkedList
+                // ต้องมี MapGenerator
+                if (mapGenerator == null)
+                {
+                    Debug.LogError(
+                        "ZombieParade: mapGenerator เป็น NULL"
+                    );
 
-                // 5. กำหนดตำแหน่งและทิศทางของส่วนที่ถูกย้ายมาใหม่
-                // ให้ไปอยู่ที่ตำแหน่งของส่วนหัวงู (ซึ่งเพิ่งเคลื่อนที่ไปเมื่อครู่)
-   
-                //6. เคลื่อนที่
+                    yield break;
+                }
 
-                // 7. เพิ่มส่วนนั้นกลับเข้าไปเป็นส่วนที่สองของ LinkedList
-                // (ซึ่งก็คือส่วนแรกของลำตัว)
+                // หัวขบวน
+                LinkedListNode<GameObject> firstNode = Parade.First;
 
-                // รอตามเวลาที่กำหนดก่อนการเคลื่อนที่ครั้งต่อไป
+                // หางขบวน
+                LinkedListNode<GameObject> lastNode = Parade.Last;
+
+                if (firstNode == null || lastNode == null)
+                {
+                    Debug.LogError(
+                        "ZombieParade: firstNode หรือ lastNode เป็น NULL"
+                    );
+
+                    yield break;
+                }
+
+                GameObject firstPart = firstNode.Value;
+                GameObject lastPart = lastNode.Value;
+
+                if (firstPart == null)
+                {
+                    Debug.LogError(
+                        "ZombieParade: firstPart เป็น NULL"
+                    );
+
+                    yield break;
+                }
+
+                if (lastPart == null)
+                {
+                    Debug.LogError(
+                        "ZombieParade: lastPart เป็น NULL"
+                    );
+
+                    yield break;
+                }
+
+                // =================================================
+                // หาตำแหน่งใหม่ของหัว
+                // =================================================
+
+                int toX = 0;
+                int toY = 0;
+
+                bool isCollide = true;
+
+                int safetyCounter = 0;
+
+                while (isCollide)
+                {
+                    moveDirection = RandomizeDirection();
+
+                    toX = Mathf.RoundToInt(
+                        firstPart.transform.position.x + moveDirection.x
+                    );
+
+                    toY = Mathf.RoundToInt(
+                        firstPart.transform.position.y + moveDirection.y
+                    );
+
+                    isCollide = IsCollision(toX, toY);
+
+                    // ป้องกัน while loop ไม่จบ
+                    safetyCounter++;
+
+                    if (safetyCounter > 100)
+                    {
+                        Debug.LogWarning(
+                            "ZombieParade: หาตำแหน่งเดินไม่ได้"
+                        );
+
+                        yield return new WaitForSeconds(moveInterval);
+                        continue;
+                    }
+                }
+
+                // =================================================
+                // เอาหางออกจากตำแหน่งเดิม
+                // =================================================
+
+                Parade.RemoveLast();
+
+                // =================================================
+                // ล้างตำแหน่งเดิมใน Map
+                // =================================================
+
+                if (positionX >= 0 &&
+                    positionY >= 0 &&
+                    positionX < mapGenerator.mapdata.GetLength(0) &&
+                    positionY < mapGenerator.mapdata.GetLength(1))
+                {
+                    mapGenerator.mapdata[positionX, positionY] = null;
+                }
+
+                // =================================================
+                // เปลี่ยนตำแหน่ง
+                // =================================================
+
+                positionX = toX;
+                positionY = toY;
+
+                // =================================================
+                // ย้ายส่วนหางมาเป็นหัว
+                // =================================================
+
+                lastPart.transform.position =
+                    new Vector3(positionX, positionY, 0);
+
+                // =================================================
+                // ใส่กลับเข้า LinkedList ด้านหน้า
+                // =================================================
+
+                Parade.AddFirst(lastPart);
+
+                // =================================================
+                // อัปเดต Map
+                // =================================================
+
+                if (positionX >= 0 &&
+                    positionY >= 0 &&
+                    positionX < mapGenerator.mapdata.GetLength(0) &&
+                    positionY < mapGenerator.mapdata.GetLength(1))
+                {
+                    mapGenerator.mapdata[positionX, positionY] = null;
+                }
+
+                // รอก่อนเดินครั้งต่อไป
                 yield return new WaitForSeconds(moveInterval);
             }
         }
+
+        // =========================================================
+        // COLLISION
+        // =========================================================
+
         private bool IsCollision(int x, int y)
         {
-            // 4. ตรวจสอบสิ่งกีดขวาง
-            
-            return false;
-        }
-        void Move(Vector2 direction,GameObject targetMove)
-        {
-            int toX = (int)direction.x;
-            int toY = (int)direction.y;
-            Debug.Log("Move to: " + toX + "," + toY);
-        }
-        
+            if (mapGenerator == null)
+            {
+                return true;
+            }
 
-        // ฟังก์ชันสำหรับเพิ่มส่วนของงู (Grow)
+            return HasPlacement(x, y);
+        }
+
+        // =========================================================
+        // MOVE
+        // =========================================================
+
+        void Move(Vector2 direction, GameObject targetMove)
+        {
+            int toX = Mathf.RoundToInt(direction.x);
+            int toY = Mathf.RoundToInt(direction.y);
+
+            Debug.Log(
+                "Move to: " + toX + "," + toY
+            );
+        }
+
+        // =========================================================
+        // GROW
+        // =========================================================
+
         private void Grow()
         {
-            GameObject newPart = Instantiate(bodyPrefab);
-            // กำหนดตำแหน่งเริ่มต้นของส่วนใหม่ให้อยู่ที่เดียวกับส่วนสุดท้ายของงู
+            // ไม่มี Prefab
+            if (bodyPrefab == null)
+            {
+                Debug.LogError(
+                    "ZombieParade: bodyPrefab เป็น NULL! " +
+                    "ให้ลาก Body Prefab ใส่ Inspector"
+                );
+
+                return;
+            }
+
+            // ไม่มีส่วนของ Parade
+            if (Parade.Count == 0)
+            {
+                Debug.LogError(
+                    "ZombieParade: Parade ไม่มีสมาชิก"
+                );
+
+                return;
+            }
+
+            // เอาส่วนสุดท้าย
             GameObject lastPart = Parade.Last.Value;
-            newPart.transform.position = lastPart.transform.position;
-            //newPart.transform.rotation = lastPart.transform.rotation;
-            // เพิ่มส่วนใหม่เข้าไปใน Linked List
+
+            if (lastPart == null)
+            {
+                Debug.LogError(
+                    "ZombieParade: lastPart เป็น NULL"
+                );
+
+                return;
+            }
+
+            // สร้างส่วนใหม่
+            GameObject newPart = Instantiate(bodyPrefab);
+
+            // ให้อยู่ตำแหน่งเดียวกับหาง
+            newPart.transform.position =
+                lastPart.transform.position;
+
+            // เพิ่มเข้าไปท้าย Parade
             Parade.AddLast(newPart);
         }
-
     }
 }
